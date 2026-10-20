@@ -51,133 +51,512 @@ Use a cable tester (recommended). Without one, successful communication later wi
 
 ---
 
-## 3. Part B — Setting Up the LAN
-Connect your newly-made cable between the two Raspberry Pis.
+# Part A — Connect the Raspberry Pis
 
-### 3.1 Configure Static IPs
+Connect the Ethernet cable directly between the Ethernet ports of Raspberry Pi A and Raspberry Pi B.
 
-#### On Raspberry Pi A:
+On **both Raspberry Pis**, check that the Ethernet interface exists:
+
 ```bash
-sudo nano /etc/dhcpcd.conf
-```
-Add:
-```bash
-interface eth0
-static ip_address=192.168.50.1/24
+ip link show eth0
 ```
 
-#### On Raspberry Pi B:
+You should see an interface called `eth0`.
+
+Now check NetworkManager:
+
 ```bash
-sudo nano /etc/dhcpcd.conf
-```
-Add:
-```bash
-interface eth0
-static ip_address=192.168.50.2/24
+nmcli device status
 ```
 
-Restart networking:
+Look for `eth0` in the output.
+
+If Ethernet is not detected or the interface is disconnected, check the Ethernet cable and connectors before continuing.
+
+---
+
+# Part B — Configure Static IP Addresses
+
+We will create the following LAN:
+
+- **Raspberry Pi A:** `192.168.50.1/24`
+- **Raspberry Pi B:** `192.168.50.2/24`
+- **Network:** `192.168.50.0/24`
+
+No gateway is required because the Raspberry Pis are communicating directly with each other.
+
+## 2.1 Find the Ethernet Connection Name
+
+On each Raspberry Pi, run:
+
 ```bash
-sudo systemctl restart dhcpcd
+nmcli connection show
+```
+
+Find the connection associated with Ethernet. It may be called:
+
+```text
+Wired connection 1
+```
+
+> If your connection has a different name, use that name in the commands below.
+
+---
+
+## 2.2 Configure Raspberry Pi A
+
+Run:
+
+```bash
+sudo nmcli connection modify "Wired connection 1" \
+    ipv4.method manual \
+    ipv4.addresses 192.168.50.1/24 \
+    ipv4.gateway "" \
+    ipv4.dns ""
+```
+
+Restart the connection:
+
+```bash
+sudo nmcli connection down "Wired connection 1"
+sudo nmcli connection up "Wired connection 1"
 ```
 
 ---
 
-## 4. Part C — Test Connectivity
+## 2.3 Configure Raspberry Pi B
 
-### From Raspberry Pi A:
+Run:
+
 ```bash
-ping 192.168.50.2
+sudo nmcli connection modify "Wired connection 1" \
+    ipv4.method manual \
+    ipv4.addresses 192.168.50.2/24 \
+    ipv4.gateway "" \
+    ipv4.dns ""
 ```
 
-### From Raspberry Pi B:
+Restart the connection:
+
 ```bash
-ping 192.168.50.1
+sudo nmcli connection down "Wired connection 1"
+sudo nmcli connection up "Wired connection 1"
 ```
-Expected output:
+
+---
+
+# Part C — Verify the Network Configuration
+
+Before using `ping`, check that each Raspberry Pi has the correct IP address.
+
+## Raspberry Pi A
+
+```bash
+ip addr show eth0
 ```
+
+Look for:
+
+```text
+inet 192.168.50.1/24
+```
+
+## Raspberry Pi B
+
+```bash
+ip addr show eth0
+```
+
+Look for:
+
+```text
+inet 192.168.50.2/24
+```
+
+On either Raspberry Pi, examine the routing table:
+
+```bash
+ip route
+```
+
+You should see a route for the local network similar to:
+
+```text
+192.168.50.0/24 dev eth0
+```
+
+---
+
+# Part D — Test Connectivity
+
+## From Raspberry Pi A
+
+```bash
+ping -c 4 192.168.50.2
+```
+
+## From Raspberry Pi B
+
+```bash
+ping -c 4 192.168.50.1
+```
+
+A successful reply will look similar to:
+
+```text
 64 bytes from 192.168.50.2: icmp_seq=1 ttl=64 time=0.4 ms
 ```
-If not, check wiring and static IP config.
+
+The exact response time may be different.
+
+If `ping` does not work, check the following before continuing:
+
+1. Is `eth0` visible with `ip link show eth0`?
+2. Does `nmcli device status` show the Ethernet interface?
+3. Does Pi A have `192.168.50.1/24`?
+4. Does Pi B have `192.168.50.2/24`?
+5. Is the Ethernet cable connected correctly?
+
+Do not continue to SSH or the Python program until `ping` works.
 
 ---
 
-## 5. Part D — Practical Uses of the LAN
+# Part E — Enable and Test SSH
 
----
+SCP and SSHFS use SSH, so SSH should be tested first.
 
-### File Transfer with SCP
+## 5.1 Enable SSH on Raspberry Pi B
 
-#### From Raspberry Pi A:
+On Pi B, run:
+
 ```bash
-scp testfile.txt pi@192.168.50.2:/home/pi/
+sudo raspi-config
 ```
-Verify on Pi B:
+
+Navigate to:
+
+```text
+Interface Options → SSH → Enable
+```
+
+Alternatively:
+
 ```bash
-ls /home/pi/
+sudo systemctl enable --now ssh
+```
+
+Check the SSH service:
+
+```bash
+systemctl status ssh
+```
+
+Press `q` to exit the status screen.
+
+---
+
+## 5.2 Find the Username on Pi B
+
+On Pi B:
+
+```bash
+whoami
+```
+
+Remember the username shown by the command.
+
+In the following examples, replace `USERNAME` with this username.
+
+---
+
+## 5.3 Connect from Pi A to Pi B
+
+On Pi A:
+
+```bash
+ssh USERNAME@192.168.50.2
+```
+
+For example, if the username on Pi B is `student`:
+
+```bash
+ssh student@192.168.50.2
+```
+
+The first time you connect, SSH may ask whether you trust the host. Read the message and follow the prompt.
+
+Once connected, you are controlling Pi B remotely from Pi A.
+
+Check:
+
+```bash
+hostname
+```
+
+Then return to Pi A:
+
+```bash
+exit
 ```
 
 ---
 
-### Shared Folder via SSHFS
-Install SSHFS on Pi A:
+# Part F — Transfer a File with SCP
+
+On Raspberry Pi A, create a test file:
+
 ```bash
+echo "Hello from Raspberry Pi A" > testfile.txt
+```
+
+Check it:
+
+```bash
+cat testfile.txt
+```
+
+Transfer it to Pi B:
+
+```bash
+scp testfile.txt USERNAME@192.168.50.2:~/
+```
+
+On Raspberry Pi B, verify the contents:
+
+```bash
+cat ~/testfile.txt
+```
+
+You should see:
+
+```text
+Hello from Raspberry Pi A
+```
+
+---
+
+# Part G — Shared Folder with SSHFS
+
+SSHFS allows a directory located on another computer to appear as if it were a local directory.
+
+## 7.1 Create the Shared Folder on Pi B
+
+On Pi B:
+
+```bash
+mkdir -p ~/shared
+echo "File stored on Pi B" > ~/shared/hello.txt
+```
+
+Check:
+
+```bash
+ls ~/shared
+```
+
+---
+
+## 7.2 Install SSHFS on Pi A
+
+On Pi A:
+
+```bash
+sudo apt update
 sudo apt install sshfs
 ```
-Mount Pi B's folder:
+
+Create a mount point:
+
 ```bash
-mkdir ~/shared_pi_b
-sshfs pi@192.168.50.2:/home/pi/shared ~/shared_pi_b
+mkdir -p ~/shared_pi_b
 ```
-Now Pi A accesses Pi B’s folder like a local directory.
+
+Mount Pi B's shared directory:
+
+```bash
+sshfs USERNAME@192.168.50.2:/home/USERNAME/shared ~/shared_pi_b
+```
+
+Replace both occurrences of `USERNAME` with the actual username on Pi B.
+
+For example:
+
+```bash
+sshfs student@192.168.50.2:/home/student/shared ~/shared_pi_b
+```
+
+Now test the mounted folder:
+
+```bash
+ls ~/shared_pi_b
+cat ~/shared_pi_b/hello.txt
+```
+
+You should see:
+
+```text
+File stored on Pi B
+```
+
+When finished, unmount it:
+
+```bash
+fusermount3 -u ~/shared_pi_b
+```
 
 ---
 
-### Python LAN Chat Program
+# Part H — Python LAN Chat Program
 
-#### On Raspberry Pi A (server):
+We will now create our own TCP application.
+
+- Pi A will act as the **server**.
+- Pi B will act as the **client**.
+- TCP port `5000` will be used.
+
+The network must already be working before attempting this section.
+
+---
+
+## 8.1 Server — Raspberry Pi A
+
+Create the program:
+
+```bash
+nano server.py
+```
+
+Enter:
+
 ```python
 import socket
 
-s = socket.socket()
-s.bind(("192.168.50.1", 5000))
-s.listen(1)
-conn, addr = s.accept()
+HOST = "192.168.50.1"
+PORT = 5000
 
-while True:
-    msg = conn.recv(1024).decode()
-    print("Pi B:", msg)
-    conn.send(input("You: ").encode())
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+    server.bind((HOST, PORT))
+    server.listen(1)
+
+    print(f"Waiting for Pi B on {HOST}:{PORT}...")
+
+    conn, addr = server.accept()
+
+    with conn:
+        print("Connected by:", addr)
+
+        while True:
+            message = conn.recv(1024)
+
+            if not message:
+                break
+
+            print("Pi B:", message.decode())
+
+            reply = input("Pi A: ")
+            conn.sendall(reply.encode())
 ```
-Run:
+
+Save the file and run:
+
 ```bash
 python3 server.py
 ```
 
-#### On Raspberry Pi B (client):
+You should see:
+
+```text
+Waiting for Pi B on 192.168.50.1:5000...
+```
+
+This is normal. The server is waiting for the client to connect.
+
+---
+
+## 8.2 Client — Raspberry Pi B
+
+Create the program:
+
+```bash
+nano client.py
+```
+
+Enter:
+
 ```python
 import socket
 
-s = socket.socket()
-s.connect(("192.168.50.1", 5000))
+HOST = "192.168.50.1"
+PORT = 5000
 
-while True:
-    s.send(input("You: ").encode())
-    msg = s.recv(1024).decode()
-    print("Pi A:", msg)
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client:
+    client.connect((HOST, PORT))
+
+    print("Connected to Pi A")
+
+    while True:
+        message = input("Pi B: ")
+        client.sendall(message.encode())
+
+        reply = client.recv(1024)
+
+        if not reply:
+            break
+
+        print("Pi A:", reply.decode())
 ```
+
 Run:
+
 ```bash
 python3 client.py
 ```
 
+Pi B should report:
+
+```text
+Connected to Pi A
+```
+
+Pi A should report that a client has connected.
+
+You can now exchange messages between the two Raspberry Pis.
+
 ---
 
-## 6. Reflection Questions
-1. What happens if both Pis have the same IP address?
-2. Why are static IPs used in this activity?
-3. How does the physical cable differ from logical addressing?
-4. How would you expand this LAN with a switch?
-5. Why is a crossover cable unnecessary on modern devices?
+# Troubleshooting Sequence
 
+When something does not work, troubleshoot in this order:
+
+```text
+1. Ethernet interface
+       ↓
+   ip link show eth0
+
+2. Ethernet connection
+       ↓
+   nmcli device status
+
+3. IP configuration
+       ↓
+   ip addr show eth0
+
+4. IP connectivity
+       ↓
+   ping
+
+5. Remote access
+       ↓
+   ssh
+
+6. File transfer
+       ↓
+   scp / sshfs
+
+7. Application layer
+       ↓
+   Python sockets
+```
+
+Do not jump directly to the Python program. Each stage depends on the previous stages working correctly.
 
