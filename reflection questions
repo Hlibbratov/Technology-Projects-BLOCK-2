@@ -1,0 +1,6 @@
+5.1
+The network cannot determine which device should receive data, causing dropped connections and network failure for both PCs.
+5.2
+Direct connections only link two devices. A switch connects multiple devices into a single network and intelligently routes data only to the intended recipient.
+5.3
+It defines the first three parts of the IP address as the network and the final part as the specific device, allowing up to 254 usable hosts.
